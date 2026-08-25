@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gov-navyDark text-slate-100 font-sans antialiased min-h-screen overflow-x-hidden;
+  }
+}
+
+/* Custom Government Card Styles */
+.gov-card {
+  @apply bg-gov-navyCard border border-gov-border rounded-lg p-5 shadow-lg;
+}
+
+.gov-button-primary {
+  @apply bg-gov-blue hover:bg-blue-700 text-white font-medium px-4 py-2 rounded transition-colors flex items-center gap-2 text-sm shadow;
+}
+
+.gov-button-secondary {
+  @apply bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium px-4 py-2 rounded transition-colors flex items-center gap-2 text-sm;
+}
+
+.gov-button-danger {
+  @apply bg-red-700 hover:bg-red-800 text-white font-medium px-4 py-2 rounded transition-colors flex items-center gap-2 text-sm shadow;
+}
+
+.gov-badge {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider;
+}
