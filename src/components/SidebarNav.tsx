@@ -12,38 +12,40 @@ interface NavItem {
   label: string;
   icon: React.ElementType;
   badge?: string;
-  roles?: string[];
 }
 
+const PATH_TO_PERMISSION: Record<string, string> = {
+  '/dashboard': 'dashboard',
+  '/screening': 'upload',
+  '/risk-engine': 'riskEngine',
+  '/identity-graph': 'riskEngine',
+  '/case-investigation': 'caseInvestigation',
+  '/forensics': 'forensics',
+  '/face-verification': 'faceVerification',
+  '/audit-ledger': 'auditLedger',
+  '/reports': 'reports',
+  '/analytics': 'analytics'
+};
+
 export const SidebarNav: React.FC = () => {
-  const { user, login } = useAuth();
-  const currentRole = user?.role || 'screening';
+  const { user, hasPermission } = useAuth();
+  const currentRole = user?.role || 'OFFICER';
 
   const navItems: NavItem[] = [
     { path: '/dashboard', label: 'Command Dashboard', icon: LayoutDashboard },
     { path: '/screening', label: 'Screening Workspace', icon: Search, badge: 'Pipeline' },
-    { path: '/ocr', label: 'OCR Intelligence', icon: FileText },
-    { path: '/validation', label: 'Validation Engine', icon: CheckSquare },
+    { path: '/risk-engine', label: 'Explainable Risk', icon: Zap },
+    { path: '/identity-graph', label: 'Identity Graph', icon: Network, badge: 'USP' },
+    { path: '/case-investigation', label: 'Case Investigation', icon: Scale },
     { path: '/forensics', label: 'Forensics Lab', icon: Eye },
     { path: '/face-verification', label: 'Face Verification', icon: Users },
-    { path: '/cross-document', label: 'Cross-Doc Matrix', icon: FileSpreadsheet },
-    { path: '/identity-graph', label: 'Identity Graph', icon: Network, badge: 'USP' },
-    { path: '/risk-engine', label: 'Explainable Risk', icon: Zap },
-    { path: '/case-investigation', label: 'Case Investigation', icon: Scale, roles: ['senior', 'senior_officer', 'admin', 'administrator'] },
-    { path: '/senior-review', label: 'Senior Officer Review', icon: ShieldAlert, badge: 'Escalated', roles: ['senior', 'senior_officer', 'admin', 'administrator'] },
-    { path: '/audit-ledger', label: 'Blockchain Audit', icon: Database, roles: ['senior', 'senior_officer', 'admin', 'administrator'] },
+    { path: '/audit-ledger', label: 'Blockchain Audit', icon: Database },
     { path: '/reports', label: 'Incident Reports', icon: FileText },
-    { path: '/analytics', label: 'System Analytics', icon: BarChart3, roles: ['admin', 'administrator'] },
-    { path: '/attack-simulator', label: 'Attack Simulator', icon: Flame, badge: 'Judge', roles: ['admin', 'administrator'] },
-    { path: '/settings', label: 'System Settings', icon: Settings, roles: ['admin', 'administrator'] },
+    { path: '/analytics', label: 'System Analytics', icon: BarChart3 }
   ];
 
-  const handleRoleSwitch = (username: string, role: string) => {
-    login(username, '12345', role as any);
-  };
-
   return (
-    <aside className="w-64 bg-gov-navy border-r border-gov-border flex flex-col shrink-0 min-h-[calc(100vh-61px)]">
+    <aside className="w-64 bg-gov-navy border-r border-gov-border flex flex-col shrink-0 min-h-[calc(100vh-61px)] relative z-20">
       <div className="p-4 border-b border-gov-border/60">
         <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
           Operation Navigation
@@ -52,11 +54,38 @@ export const SidebarNav: React.FC = () => {
 
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
-          if (item.roles) {
-            const isAllowed = item.roles.some(r => currentRole.includes(r) || r.includes(currentRole));
-            if (!isAllowed) return null;
-          }
+          const permissionKey = PATH_TO_PERMISSION[item.path];
+          const isAllowed = permissionKey ? hasPermission(permissionKey) : true;
           const Icon = item.icon;
+
+          if (!isAllowed) {
+            return (
+              <div
+                key={item.path}
+                className="relative group flex items-center justify-between px-3 py-2.5 rounded-md text-sm font-medium transition-colors text-slate-500 bg-slate-900/40 border border-transparent cursor-not-allowed select-none"
+              >
+                <div className="flex items-center gap-3">
+                  <Icon className="w-4 h-4 text-slate-600" />
+                  <span className="line-through decoration-slate-700/50">{item.label}</span>
+                </div>
+                
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] leading-none text-slate-600" title="Locked">🔒</span>
+                  {item.badge && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold bg-slate-800 text-slate-500 border border-slate-700">
+                      {item.badge}
+                    </span>
+                  )}
+                </div>
+
+                {/* Hover Tooltip */}
+                <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 bg-slate-950 border border-slate-800 text-slate-300 text-xs py-2 px-3.5 rounded shadow-2xl whitespace-nowrap z-50 pointer-events-none hidden group-hover:block transition-all border-l-4 border-l-red-500">
+                  Access Restricted — Your role ({currentRole.replace('_', ' ')}) does not have permission for this module
+                </div>
+              </div>
+            );
+          }
+
           return (
             <NavLink
               key={item.path}
@@ -87,42 +116,6 @@ export const SidebarNav: React.FC = () => {
         })}
       </nav>
 
-      {/* Role Switcher Demo Control */}
-      <div className="p-3 border-t border-gov-border/60 bg-gov-navyDark/50 text-xs">
-        <div className="text-[10px] text-slate-400 font-semibold mb-1">DEMO ROLE SWITCHER:</div>
-        <div className="grid grid-cols-3 gap-1">
-          <button
-            onClick={() => handleRoleSwitch('screening@gmail.com', 'screening')}
-            className={`text-[10px] py-1 px-1 text-center rounded font-mono border ${
-              currentRole === 'screening' || currentRole === 'screening_officer'
-                ? 'bg-blue-600 text-white border-blue-400'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-            }`}
-          >
-            Screening
-          </button>
-          <button
-            onClick={() => handleRoleSwitch('senior@gmail.com', 'senior')}
-            className={`text-[10px] py-1 px-1 text-center rounded font-mono border ${
-              currentRole === 'senior' || currentRole === 'senior_officer'
-                ? 'bg-purple-600 text-white border-purple-400'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-            }`}
-          >
-            Senior
-          </button>
-          <button
-            onClick={() => handleRoleSwitch('admin@gmail.com', 'admin')}
-            className={`text-[10px] py-1 px-1 text-center rounded font-mono border ${
-              currentRole === 'admin' || currentRole === 'administrator'
-                ? 'bg-amber-600 text-white border-amber-400'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-            }`}
-          >
-            Admin
-          </button>
-        </div>
-      </div>
     </aside>
   );
 };

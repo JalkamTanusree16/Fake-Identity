@@ -1,12 +1,14 @@
-export type Role = 'screening' | 'senior' | 'admin' | 'screening_officer' | 'senior_officer' | 'administrator';
+export type Role = 'screening' | 'senior' | 'admin' | 'screening_officer' | 'senior_officer' | 'administrator' | 'ADMIN' | 'OFFICER' | 'SENIOR_REVIEWER' | 'AUDITOR';
 
 export interface User {
-  id: number;
-  username: string;
+  id?: number;
+  username?: string;
+  email?: string;
   full_name: string;
   badge_number: string;
   role: Role;
-  department: string;
+  country?: string;
+  department?: string;
 }
 
 export interface AuthenticityCheckItem {

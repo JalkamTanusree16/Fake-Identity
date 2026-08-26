@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ScreeningProvider } from './context/ScreeningContext';
 
@@ -18,17 +18,37 @@ import { CrossDocumentIntelligence } from './pages/CrossDocumentIntelligence';
 import { IdentityGraphPage } from './pages/IdentityGraphPage';
 import { RiskEnginePage } from './pages/RiskEnginePage';
 import { CaseInvestigation } from './pages/CaseInvestigation';
-import { SeniorOfficerReview } from './pages/SeniorOfficerReview';
 import { AuditLedgerPage } from './pages/AuditLedgerPage';
 import { ReportsCenter } from './pages/ReportsCenter';
 import { AnalyticsPage } from './pages/AnalyticsPage';
-import { AttackSimulator } from './pages/AttackSimulator';
-import { SystemSettings } from './pages/SystemSettings';
+
+const ROUTE_PERMISSIONS: Record<string, string> = {
+  '/dashboard': 'dashboard',
+  '/screening': 'upload',
+  '/ocr': 'ocr',
+  '/validation': 'validation',
+  '/forensics': 'forensics',
+  '/face-verification': 'faceVerification',
+  '/cross-document': 'validation',
+  '/identity-graph': 'riskEngine',
+  '/risk-engine': 'riskEngine',
+  '/case-investigation': 'caseInvestigation',
+  '/audit-ledger': 'auditLedger',
+  '/reports': 'reports',
+  '/analytics': 'analytics'
+};
 
 const ProtectedLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, hasPermission } = useAuth();
+  const location = useLocation();
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  const permissionKey = ROUTE_PERMISSIONS[location.pathname];
+  if (permissionKey && !hasPermission(permissionKey)) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return (
@@ -63,12 +83,9 @@ export const App: React.FC = () => {
             <Route path="/identity-graph" element={<ProtectedLayout><IdentityGraphPage /></ProtectedLayout>} />
             <Route path="/risk-engine" element={<ProtectedLayout><RiskEnginePage /></ProtectedLayout>} />
             <Route path="/case-investigation" element={<ProtectedLayout><CaseInvestigation /></ProtectedLayout>} />
-            <Route path="/senior-review" element={<ProtectedLayout><SeniorOfficerReview /></ProtectedLayout>} />
             <Route path="/audit-ledger" element={<ProtectedLayout><AuditLedgerPage /></ProtectedLayout>} />
             <Route path="/reports" element={<ProtectedLayout><ReportsCenter /></ProtectedLayout>} />
             <Route path="/analytics" element={<ProtectedLayout><AnalyticsPage /></ProtectedLayout>} />
-            <Route path="/attack-simulator" element={<ProtectedLayout><AttackSimulator /></ProtectedLayout>} />
-            <Route path="/settings" element={<ProtectedLayout><SystemSettings /></ProtectedLayout>} />
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

@@ -1,90 +1,85 @@
 import React, { createContext, useContext, useState } from 'react';
 import { User, Role } from '../types';
 
-export const PERMISSIONS: Record<string, string[]> = {
-  screening: [
-    'view_screening',
-    'upload_document',
-    'view_document_result',
-    'run_authenticity_demo',
-    'view_basic_risk',
-    'view_alerts'
-  ],
-  screening_officer: [
-    'view_screening',
-    'upload_document',
-    'view_document_result',
-    'run_authenticity_demo',
-    'view_basic_risk',
-    'view_alerts'
-  ],
-  senior: [
-    'view_screening',
-    'upload_document',
-    'view_document_result',
-    'run_authenticity_demo',
-    'view_basic_risk',
-    'view_alerts',
-    'view_detailed_risk',
-    'view_history',
-    'review_case',
-    'view_escalations',
-    'view_audit_information'
-  ],
-  senior_officer: [
-    'view_screening',
-    'upload_document',
-    'view_document_result',
-    'run_authenticity_demo',
-    'view_basic_risk',
-    'view_alerts',
-    'view_detailed_risk',
-    'view_history',
-    'review_case',
-    'view_escalations',
-    'view_audit_information'
-  ],
-  admin: [
-    'view_screening',
-    'upload_document',
-    'view_document_result',
-    'run_authenticity_demo',
-    'view_basic_risk',
-    'view_alerts',
-    'view_detailed_risk',
-    'view_history',
-    'review_case',
-    'view_escalations',
-    'view_audit_information',
-    'manage_users',
-    'view_system_statistics',
-    'view_audit_logs',
-    'view_system_status',
-    'manage_configuration'
-  ],
-  administrator: [
-    'view_screening',
-    'upload_document',
-    'view_document_result',
-    'run_authenticity_demo',
-    'view_basic_risk',
-    'view_alerts',
-    'view_detailed_risk',
-    'view_history',
-    'review_case',
-    'view_escalations',
-    'view_audit_information',
-    'manage_users',
-    'view_system_statistics',
-    'view_audit_logs',
-    'view_system_status',
-    'manage_configuration'
-  ]
+// DEMO CREDENTIALS
+// Admin: admin@idverify.gov / Admin@123
+// Officer: officer@idverify.gov / Officer@123
+// Reviewer: reviewer@idverify.gov / Reviewer@123
+// Auditor: auditor@idverify.gov / Auditor@123
+
+export const USERS = {
+  "admin@idverify.gov": {
+    password: "Admin@123",
+    role: "ADMIN" as Role,
+    name: "Dr. Priya Sharma",
+    country: "IN",
+    badge: "SYS-ADM-001"
+  },
+  "officer@idverify.gov": {
+    password: "Officer@123",
+    role: "OFFICER" as Role,
+    name: "Ravi Mehta",
+    country: "IN",
+    badge: "SCR-OFF-042"
+  },
+  "reviewer@idverify.gov": {
+    password: "Reviewer@123",
+    role: "SENIOR_REVIEWER" as Role,
+    name: "Anita Nair",
+    country: "IN",
+    badge: "SNR-REV-007"
+  },
+  "auditor@idverify.gov": {
+    password: "Auditor@123",
+    role: "AUDITOR" as Role,
+    name: "Suresh Iyer",
+    country: "IN",
+    badge: "AUD-CMP-015"
+  }
 };
+
+export const PERMISSIONS: Record<string, Record<string, boolean | string>> = {
+  ADMIN: {
+    dashboard: true, upload: true, ocr: true, validation: true,
+    forensics: true, faceVerification: true, riskEngine: true,
+    caseInvestigation: true, seniorReview: true, auditLedger: true,
+    reports: true, analytics: true, userManagement: true,
+    roleManagement: true, systemSettings: true, attackSimulator: true
+  },
+  OFFICER: {
+    dashboard: true, upload: true, ocr: true, validation: true,
+    forensics: true, faceVerification: true, riskEngine: true,
+    caseInvestigation: true, seniorReview: false, auditLedger: "readonly",
+    reports: "limited", analytics: "limited", userManagement: false,
+    roleManagement: false, systemSettings: false, attackSimulator: false
+  },
+  SENIOR_REVIEWER: {
+    dashboard: true, upload: true, ocr: true, validation: true,
+    forensics: true, faceVerification: true, riskEngine: true,
+    caseInvestigation: true, seniorReview: true, auditLedger: "readonly",
+    reports: true, analytics: "limited", userManagement: false,
+    roleManagement: false, systemSettings: false, attackSimulator: false
+  },
+  AUDITOR: {
+    dashboard: "limited", upload: false, ocr: false, validation: false,
+    forensics: false, faceVerification: false, riskEngine: false,
+    caseInvestigation: "readonly", seniorReview: "readonly", auditLedger: true,
+    reports: true, analytics: true, userManagement: false,
+    roleManagement: false, systemSettings: false, attackSimulator: false
+  }
+};
+
+export interface CountryInfo {
+  code: string;
+  name: string;
+  flag: string;
+}
 
 interface AuthContextType {
   user: User | null;
-  login: (username: string, password: string, role?: Role) => Promise<boolean>;
+  selectedCountry: CountryInfo | null;
+  setSelectedCountry: (country: CountryInfo) => void;
+  login: (email: string, pass: string, country?: CountryInfo) => Promise<boolean>;
   logout: () => void;
   isAuthenticated: boolean;
   hasPermission: (permission: string) => boolean;
@@ -92,109 +87,108 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const DEFAULT_DEMO_USER: User = {
-  id: 101,
-  username: "screening@gmail.com",
-  full_name: "Screening Officer Rajesh Mehta",
-  badge_number: "SSB-SO-4091",
-  role: "screening",
-  department: "Operational Border Screening Unit"
-};
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('trinetra_user');
-    return saved ? JSON.parse(saved) : DEFAULT_DEMO_USER;
+  const [authState, setAuthState] = useState<{
+    user: User | null;
+    role: Role | null;
+    country: CountryInfo | null;
+    loginTime: string | null;
+  }>(() => {
+    const saved = localStorage.getItem('auth_state');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse auth_state", e);
+      }
+    }
+    return { user: null, role: null, country: null, loginTime: null };
   });
 
-  const login = async (username: string, password: string, role?: Role): Promise<boolean> => {
-    try {
-      // Attempt backend login first
-      const resp = await fetch('http://127.0.0.1:8000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
-
-      if (resp.ok) {
-        const data = await resp.json();
-        setUser(data.user);
-        localStorage.setItem('trinetra_user', JSON.stringify(data.user));
-        localStorage.setItem('trinetra_token', data.access_token);
-        return true;
-      }
-
-      // Client-side fallback if backend call returns error
-      const u = username.toLowerCase().trim();
-      let assignedRole: Role = role || "screening";
-      let fullName = "Screening Officer Rajesh Mehta";
-      let badge = "SSB-SO-4091";
-
-      if (u === "senior@gmail.com" || u === "senior_rawat" || role === "senior" || role === "senior_officer") {
-        assignedRole = "senior";
-        fullName = "Senior Officer Col. Vikram Rawat";
-        badge = "SSB-SNR-1002";
-      } else if (u === "admin@gmail.com" || u === "admin_singh" || role === "admin" || role === "administrator") {
-        assignedRole = "admin";
-        fullName = "System Admin Harpreet Singh";
-        badge = "MHA-ADM-0001";
-      }
-
-      if (password === "12345" || password === "mha123") {
-        const newUser: User = {
-          id: Math.floor(Math.random() * 1000) + 1,
-          username: u,
-          full_name: fullName,
-          badge_number: badge,
-          role: assignedRole,
-          department: "Sashastra Seema Bal (SSB)"
-        };
-        setUser(newUser);
-        localStorage.setItem('trinetra_user', JSON.stringify(newUser));
-        localStorage.setItem('trinetra_token', 'DEMO_JWT_TOKEN_MHA_SSB_2026');
-        return true;
-      }
-
-      return false;
-    } catch {
-      // Offline / fallback mode
-      const u = username.toLowerCase().trim();
-      let assignedRole: Role = role || "screening";
-      if (u.includes("senior")) assignedRole = "senior";
-      if (u.includes("admin")) assignedRole = "admin";
-
-      if (password === "12345" || password === "mha123") {
-        const newUser: User = {
-          id: 1,
-          username: u,
-          full_name: u,
-          badge_number: "SSB-DEMO-99",
-          role: assignedRole,
-          department: "Sashastra Seema Bal (SSB)"
-        };
-        setUser(newUser);
-        localStorage.setItem('trinetra_user', JSON.stringify(newUser));
-        localStorage.setItem('trinetra_token', 'DEMO_JWT_TOKEN_MHA_SSB_2026');
-        return true;
-      }
-      return false;
+  const [selectedCountryState, setSelectedCountryState] = useState<CountryInfo | null>(() => {
+    const saved = localStorage.getItem('auth_state');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return parsed.country || null;
+      } catch (e) {}
     }
+    return null;
+  });
+
+  const user = authState.user;
+  const selectedCountry = selectedCountryState;
+
+  const setSelectedCountry = (country: CountryInfo) => {
+    setSelectedCountryState(country);
+  };
+
+  const login = async (email: string, pass: string, countryInput?: CountryInfo): Promise<boolean> => {
+    const normalizedEmail = email.toLowerCase().trim() as keyof typeof USERS;
+    const matchedUser = USERS[normalizedEmail];
+
+    if (matchedUser && matchedUser.password === pass) {
+      const country = countryInput || selectedCountry || { code: matchedUser.country, name: matchedUser.country === 'IN' ? 'India' : 'Unknown', flag: '🇮🇳' };
+      const userObj: User = {
+        id: Math.floor(Math.random() * 1000) + 1,
+        username: email,
+        email: email,
+        full_name: matchedUser.name,
+        badge_number: matchedUser.badge,
+        role: matchedUser.role,
+        country: country.code,
+        department: "National Identity Verification Center"
+      };
+
+      const newAuthState = {
+        user: userObj,
+        role: matchedUser.role,
+        country: country,
+        loginTime: new Date().toISOString()
+      };
+
+      setAuthState(newAuthState);
+      setSelectedCountryState(country);
+      localStorage.setItem('auth_state', JSON.stringify(newAuthState));
+      // Keep old localStorage keys for backwards compatibility with any existing pages
+      localStorage.setItem('trinetra_user', JSON.stringify(userObj));
+      localStorage.setItem('trinetra_token', 'DEMO_JWT_TOKEN_MHA_SSB_2026');
+
+      return true;
+    }
+    return false;
   };
 
   const logout = () => {
-    setUser(null);
+    setAuthState({ user: null, role: null, country: null, loginTime: null });
+    setSelectedCountryState(null);
+    localStorage.removeItem('auth_state');
     localStorage.removeItem('trinetra_user');
     localStorage.removeItem('trinetra_token');
   };
 
-  const hasPermission = (permission: string): boolean => {
+  const hasPermission = (permissionKey: string): boolean => {
     if (!user) return false;
-    const allowed = PERMISSIONS[user.role] || [];
-    return allowed.includes(permission);
+    const rolePermissions = PERMISSIONS[user.role];
+    if (!rolePermissions) return false;
+    
+    // If the permission is explicitly set to false, access is denied.
+    // If it is true, "readonly", or "limited", access is allowed.
+    return rolePermissions[permissionKey] !== false && rolePermissions[permissionKey] !== undefined;
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isAuthenticated: !!user, hasPermission }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        selectedCountry,
+        setSelectedCountry,
+        login,
+        logout,
+        isAuthenticated: !!user,
+        hasPermission
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

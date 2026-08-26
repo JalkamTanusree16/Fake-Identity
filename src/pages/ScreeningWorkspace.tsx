@@ -1,16 +1,10 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Upload, FileText, CheckCircle2, ShieldAlert, Play,
-  Zap, Eye, Users, Layers, RefreshCw, XCircle, AlertTriangle, ShieldCheck
-} from 'lucide-react';
+import { Upload, Play, RefreshCw, XCircle, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 import { useScreening } from '../context/ScreeningContext';
 import { api } from '../services/api';
-import { StatusBadge } from '../components/StatusBadge';
+import { getAuthenticityResult } from '../services/authenticityService';
 import { documentAnalysisService } from '../services/documentAnalysisService';
-import { authenticityService } from '../services/authenticityService';
-import { useSingleDoubleClick } from '../hooks/useSingleDoubleClick';
-import { AuthenticityResult } from '../types';
 
 interface DocValidationResult {
   success: boolean;
@@ -21,6 +15,365 @@ interface DocValidationResult {
   message: string;
 }
 
+interface CheckDetail {
+  name: string;
+  status: 'PASS' | 'FAIL' | 'WARN';
+  detail: string;
+}
+
+interface CaseCheckData {
+  status: string;
+  label: string;
+  confidence: number;
+  riskLevel: string;
+  riskScore?: number;
+  reasons: string[];
+  checks: CheckDetail[];
+}
+
+// Sub-component: PipelineResults
+interface PipelineResultsProps {
+  isAnalyzing: boolean;
+  currentStage: number;
+  resultData: CaseCheckData | null;
+  resultMode: 'NONE' | 'SCREENING';
+  filename: string;
+}
+
+const PipelineResults: React.FC<PipelineResultsProps> = ({ isAnalyzing, currentStage, resultData, resultMode, filename }) => {
+  const [expandedStages, setExpandedStages] = useState<Record<number, boolean>>({});
+
+  const toggleStage = (stageId: number) => {
+    setExpandedStages(prev => ({
+      ...prev,
+      [stageId]: !prev[stageId]
+    }));
+  };
+
+  const stagesDefinition = [
+    {
+      id: 1,
+      name: "Stage 1: Intake & Image Quality Check",
+      checkName: "Quality",
+      desc: "Validates the uploaded file format, checks resolution (minimum 300 DPI for document processing), detects blur, glare, and skew. Rejects files that cannot be processed reliably."
+    },
+    {
+      id: 2,
+      name: "Stage 2: OCR Text Field Extraction",
+      checkName: "Font",
+      desc: "Extracts all visible text fields from the document — name, date of birth, nationality, document number, expiry date — using optical character recognition tuned for government document fonts (OCR-B)."
+    },
+    {
+      id: 3,
+      name: "Stage 3: ICAO MRZ Checksum Parser",
+      checkName: "MRZ",
+      desc: "Reads the Machine Readable Zone (two lines at the bottom of a passport). Each field has a checksum digit calculated using the ICAO 9303 weighted modulo-10 algorithm. A single wrong digit means the document number, DOB, or expiry has been altered."
+    },
+    {
+      id: 4,
+      name: "Stage 4: Document Validation Engine",
+      checkName: "Structure",
+      desc: "Compares extracted field values against each other for logical consistency (e.g., expiry must be after issue date, age must match DOB, nationality must be a valid ISO code) and against the known template for the detected document type and issuing country."
+    },
+    {
+      id: 5,
+      name: "Stage 5: Tampering Forensics & ELA",
+      checkName: "ELA",
+      desc: "Error Level Analysis (ELA) re-compresses the image at a known quality and compares it to the original. Regions that were digitally edited (pasted text, changed digits, replaced photos) show up as bright spots because they have different compression histories than untouched regions."
+    },
+    {
+      id: 6,
+      name: "Stage 6: Biometric Face Verification",
+      checkName: "Biometric",
+      desc: "Detects the photo zone on the document and checks for pixel-level anomalies — clone stamping, splicing, inconsistent lighting gradients — that indicate the original photo was replaced with a different person's image."
+    },
+    {
+      id: 7,
+      name: "Stage 7: Multimodal Risk Fusion Engine",
+      checkName: "Fusion",
+      desc: "Takes the outputs from all 6 stages and computes a final risk score using a weighted fusion model. Higher-confidence failures (MRZ, ELA) carry more weight than warnings. Produces the final AUTHENTIC / SUSPICIOUS / FAKE verdict with confidence score."
+    }
+  ];
+
+  const getStageCheck = (stageId: number, checkName: string): CheckDetail => {
+    if (!resultData || resultMode === 'NONE') {
+      return { name: checkName, status: 'PASS', detail: 'Pending analysis initiation...' };
+    }
+
+    const checks = resultData.checks || [];
+
+    if (checkName === 'Structure') {
+      const structCheck = checks.find(c => c.name === 'Structure' || c.name === 'Document Structure');
+      const fieldCheck = checks.find(c => c.name === 'Field Consistency');
+      
+      const hasFail = structCheck?.status === 'FAIL' || fieldCheck?.status === 'FAIL';
+      const hasWarn = structCheck?.status === 'WARN' || fieldCheck?.status === 'WARN';
+      const status = hasFail ? 'FAIL' : hasWarn ? 'WARN' : 'PASS';
+      
+      let detail = '';
+      if (status === 'FAIL') {
+        detail = structCheck?.status === 'FAIL' ? structCheck.detail : fieldCheck?.detail || '';
+      } else if (status === 'WARN') {
+        detail = structCheck?.status === 'WARN' ? structCheck.detail : fieldCheck?.detail || '';
+      } else {
+        detail = structCheck?.detail || fieldCheck?.detail || "All cross-field logical checks passed.";
+      }
+
+      return {
+        name: 'Document Validation Engine',
+        status,
+        detail
+      };
+    }
+
+    // Direct mapping to named checks in DEMO_RESULTS
+    const nameMap: Record<string, string> = {
+      'Quality': 'Quality',
+      'Font': 'Font',
+      'MRZ': 'MRZ',
+      'ELA': 'ELA',
+      'Biometric': 'Biometric',
+      'Fusion': 'Fusion'
+    };
+
+    const targetName = nameMap[checkName] || checkName;
+    const check = checks.find(c => c.name === targetName);
+    return check || { name: checkName, status: 'PASS', detail: 'Verification complete.' };
+  };
+
+  const getBadgeStyles = (status: 'PASS' | 'FAIL' | 'WARN', activeSession: boolean) => {
+    if (!activeSession) {
+      return 'bg-slate-900 text-slate-500 border border-slate-800';
+    }
+    switch (status) {
+      case 'PASS':
+        return 'bg-[#00FF88]/10 text-[#00FF88] border border-[#00FF88]/20';
+      case 'FAIL':
+        return 'bg-[#FF4444]/10 text-[#FF4444] border border-[#FF4444]/20';
+      case 'WARN':
+        return 'bg-amber-400/10 text-amber-400 border border-amber-400/20';
+      default:
+        return 'bg-slate-900 text-slate-500 border border-slate-800';
+    }
+  };
+
+  const getProgressBarColor = (status: 'PASS' | 'FAIL' | 'WARN') => {
+    switch (status) {
+      case 'PASS':
+        return 'bg-[#00FF88]';
+      case 'FAIL':
+        return 'bg-[#FF4444]';
+      case 'WARN':
+        return 'bg-amber-400';
+      default:
+        return 'bg-slate-700';
+    }
+  };
+
+  if (isAnalyzing) {
+    return (
+      <div className="gov-card p-5 space-y-4">
+        <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
+          <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider font-mono">
+            Pipeline Execution Telemetry
+          </h3>
+          <span className="text-[10px] font-mono bg-blue-950 text-blue-400 px-2 py-0.5 rounded border border-blue-500/30 animate-pulse">
+            Active: Stage {currentStage} / 7
+          </span>
+        </div>
+
+        <div className="space-y-2">
+          {stagesDefinition.map((stg) => {
+            const isCompleted = currentStage > stg.id;
+            const isProcessing = currentStage === stg.id;
+
+            return (
+              <div 
+                key={stg.id} 
+                className={`p-3 rounded-lg border flex items-center justify-between transition-all ${
+                  isProcessing
+                    ? 'bg-blue-950/60 border-blue-500 text-white shadow-md translate-x-1'
+                    : isCompleted
+                    ? 'bg-slate-900/40 border-emerald-500/30 text-emerald-300'
+                    : 'bg-slate-950/20 border-slate-900 text-slate-500'
+                }`}
+              >
+                <span className="text-xs font-bold font-mono">{stg.name}</span>
+                {isCompleted ? (
+                  <span className="text-[9px] font-mono font-bold bg-[#00FF88]/10 text-[#00FF88] px-2 py-0.5 rounded border border-[#00FF88]/20">
+                    COMPLETED
+                  </span>
+                ) : isProcessing ? (
+                  <span className="text-[9px] font-mono font-bold bg-amber-400/10 text-amber-400 px-2 py-0.5 rounded border border-amber-400/20 animate-pulse">
+                    PROCESSING...
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-mono text-slate-600">PENDING</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  const hasActiveSession = resultMode !== 'NONE' && !!resultData;
+
+  return (
+    <div className="space-y-5">
+      {/* Accordion Stages Container */}
+      <div className="gov-card p-4 space-y-2.5">
+        <div className="border-b border-slate-855 pb-3 flex items-center justify-between">
+          <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider font-mono">
+            7-Stage Forensics Accordion
+          </h3>
+          {hasActiveSession && (
+            <span className="text-[10px] font-mono bg-slate-900 px-2 py-0.5 rounded text-slate-400">
+              File: {filename}
+            </span>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          {stagesDefinition.map((stg) => {
+            const checkInfo = getStageCheck(stg.id, stg.checkName);
+            const isExpanded = !!expandedStages[stg.id];
+            const badgeText = hasActiveSession ? `✓ ${checkInfo.status}` : 'PENDING';
+
+            return (
+              <div 
+                key={stg.id} 
+                className="border border-slate-800 rounded-lg overflow-hidden bg-slate-900/30"
+              >
+                {/* Accordion Header */}
+                <button
+                  type="button"
+                  onClick={() => toggleStage(stg.id)}
+                  className="w-full flex items-center justify-between p-3.5 hover:bg-slate-800/20 text-left transition-colors"
+                >
+                  <span className="text-xs font-bold text-slate-200 font-mono">
+                    {stg.name}
+                  </span>
+                  
+                  <div className="flex items-center gap-3">
+                    <span className={`text-[9px] font-bold font-mono px-2 py-0.5 rounded uppercase ${getBadgeStyles(checkInfo.status, hasActiveSession)}`}>
+                      {checkInfo.status === 'FAIL' ? '✗ FAIL' : badgeText}
+                    </span>
+                    {isExpanded ? (
+                      <ChevronUp className="w-4 h-4 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                    )}
+                  </div>
+                </button>
+
+                {/* Accordion Body */}
+                {isExpanded && (
+                  <div className="p-4 bg-slate-950/60 border-t border-slate-800/80 space-y-3">
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+                        What this checks:
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                        {stg.desc}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+                        Finding:
+                      </div>
+                      <p className="text-xs text-slate-200 font-mono leading-relaxed">
+                        {hasActiveSession ? checkInfo.detail : 'Pipeline has not been executed yet.'}
+                      </p>
+                    </div>
+
+                    {/* Thin progress bar */}
+                    {hasActiveSession && (
+                      <div className="pt-1.5">
+                        <div className="h-[2px] w-full bg-slate-800 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full ${getProgressBarColor(checkInfo.status)}`}
+                            style={{ width: checkInfo.status === 'PASS' ? '100%' : checkInfo.status === 'WARN' ? '50%' : '100%' }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Final Verdict Card */}
+      {hasActiveSession && resultData && (
+        <div className={`gov-card p-5 border ${
+          resultData.status === 'FAKE'
+            ? 'bg-red-950/20 border-red-500/30 text-red-200 shadow-[0_0_15px_rgba(239,68,68,0.05)]'
+            : resultData.status === 'SUSPICIOUS'
+            ? 'bg-amber-950/20 border-amber-500/30 text-amber-200 shadow-[0_0_15px_rgba(245,158,11,0.05)]'
+            : 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200 shadow-[0_0_15px_rgba(16,185,129,0.05)]'
+        } space-y-4`}>
+          <div className="flex items-center justify-between border-b border-slate-855 pb-3">
+            <div>
+              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
+                FINAL VERDICT VERIFICATION
+              </span>
+              <h4 className="text-xl font-extrabold font-mono mt-1 uppercase tracking-tight">
+                {resultData.status === 'AUTHENTIC' ? '✓ AUTHENTIC' : `✗ ${resultData.status}`}
+              </h4>
+              <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                {resultData.label}
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400 block">
+                CONFIDENCE
+              </span>
+              <span className="text-xl font-bold font-mono text-white mt-1 block">
+                {resultData.confidence}%
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono text-slate-400">Risk Threshold:</span>
+            <span className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border uppercase ${
+              resultData.riskLevel === 'CRITICAL' || resultData.riskLevel === 'HIGH'
+                ? 'bg-red-500/20 text-red-300 border-red-500/30'
+                : resultData.riskLevel === 'MEDIUM'
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+            }`}>
+              {resultData.riskLevel}
+            </span>
+          </div>
+
+          {/* Reasons List */}
+          {resultData.reasons && resultData.reasons.length > 0 && (
+            <div className="bg-slate-950/60 p-3.5 rounded-lg border border-slate-800/80 space-y-2 mt-1">
+              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest font-mono">
+                Primary Threat Factors:
+              </div>
+              <ul className="space-y-1.5 text-xs font-sans text-slate-300">
+                {resultData.reasons.map((r, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span className="text-[#FF4444] font-bold">•</span>
+                    <span>{r}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const ScreeningWorkspace: React.FC = () => {
   const navigate = useNavigate();
   const { activeCaseId, setActiveCaseId, travelerName, setTravelerName } = useScreening();
@@ -30,11 +383,8 @@ export const ScreeningWorkspace: React.FC = () => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [currentStage, setCurrentStage] = useState<number>(0);
-
-  // Results state
-  const [screeningResult, setScreeningResult] = useState<any>(null);
-  const [authenticityResult, setAuthenticityResult] = useState<AuthenticityResult | null>(null);
-  const [resultMode, setResultMode] = useState<'NONE' | 'SCREENING' | 'AUTHENTICITY'>('NONE');
+  const [resultMode, setResultMode] = useState<'NONE' | 'SCREENING'>('NONE');
+  const [resultData, setResultData] = useState<CaseCheckData | null>(null);
 
   // Smart validation state
   const [isValidating, setIsValidating] = useState<boolean>(false);
@@ -42,16 +392,7 @@ export const ScreeningWorkspace: React.FC = () => {
   const [validationPassed, setValidationPassed] = useState<boolean | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const stages = [
-    { id: 1, name: "1. Intake & Image Quality Check", icon: Upload },
-    { id: 2, name: "2. OCR Text Field Extraction", icon: FileText },
-    { id: 3, name: "3. ICAO MRZ Checksum Parser", icon: CheckCircle2 },
-    { id: 4, name: "4. Document Validation Engine", icon: ShieldAlert },
-    { id: 5, name: "5. Tampering Forensics & ELA", icon: Eye },
-    { id: 6, name: "6. Biometric Face Verification", icon: Users },
-    { id: 7, name: "7. Multimodal Risk Fusion Engine", icon: Zap },
-  ];
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   // File Selection Handler
   const handleFileSelected = useCallback(async (file: File) => {
@@ -59,9 +400,8 @@ export const ScreeningWorkspace: React.FC = () => {
     setPreviewUrl(URL.createObjectURL(file));
     setValidationResult(null);
     setValidationPassed(null);
-    setScreeningResult(null);
-    setAuthenticityResult(null);
     setResultMode('NONE');
+    setResultData(null);
     setCurrentStage(0);
 
     setIsValidating(true);
@@ -96,70 +436,64 @@ export const ScreeningWorkspace: React.FC = () => {
     e.preventDefault();
   };
 
-  // Execution Handlers
+  // 1. Run Document Screening Handler
   const triggerNormalScreening = async () => {
+    if (!selectedFile) return;
     setIsAnalyzing(true);
-    setCurrentStage(1);
-    setAuthenticityResult(null);
+    setResultMode('NONE');
+    setResultData(null);
+    setCurrentStage(0);
 
-    for (let i = 1; i <= 7; i++) {
-      setCurrentStage(i);
-      await new Promise(r => setTimeout(r, 200));
-    }
+    // Simulate analysis delay
+    await new Promise(r => setTimeout(r, 1400));
 
-    const docKey = selectedFile ? selectedFile.name : activeCaseId;
-    const res = await documentAnalysisService.analyzeDocument({
-      documentId: docKey,
-      filename: selectedFile?.name,
+    await documentAnalysisService.analyzeDocument({
+      documentId: selectedFile.name,
+      filename: selectedFile.name,
       travelerId: travelerName
     });
 
-    setScreeningResult(res);
-    setResultMode('SCREENING');
     setIsAnalyzing(false);
+    
+    // Redirect to Command Dashboard so the user sees results reactively
+    navigate('/dashboard');
   };
 
+  // 2. Verify Authenticity Handler (Stage-by-Stage Telemetry Animation)
   const triggerAuthenticityCheck = async () => {
-    setIsAnalyzing(true);
-    setCurrentStage(1);
-    setScreeningResult(null);
+    if (!selectedFile) return;
 
+    setIsAnalyzing(true);
+    setResultMode('NONE');
+    setResultData(null);
+    setCurrentStage(1);
+
+    // Run 400ms delay per stage to animate loading state
     for (let i = 1; i <= 7; i++) {
       setCurrentStage(i);
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise(r => setTimeout(r, 400));
     }
 
-    const docKey = selectedFile ? selectedFile.name : activeCaseId;
-    const res = await authenticityService.checkAuthenticity({
-      documentId: docKey,
-      filename: selectedFile?.name,
-      scenarioId: activeCaseId
-    });
+    const authResult = await getAuthenticityResult(selectedFile.name);
+    setResultData(authResult);
 
-    setAuthenticityResult(res);
-    setResultMode('AUTHENTICITY');
     setIsAnalyzing(false);
+    setResultMode('SCREENING');
+
+    // Scroll down to the results wrapper automatically
+    setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
   };
 
-  // Hidden Debounced Single vs Double Click Handler for Image Preview
-  const handleDropZoneClickWrapper = useSingleDoubleClick({
-    onSingleClick: () => {
-      if (selectedFile) {
-        triggerNormalScreening();
-      } else {
-        handleDropZoneClick();
-      }
-    },
-    onDoubleClick: () => {
-      if (selectedFile) {
-        triggerAuthenticityCheck();
-      } else {
-        handleDropZoneClick();
-      }
-    }
-  });
-
-  const canRunScreening = !isAnalyzing && !isValidating && validationPassed !== false;
+  // Active filename helper to display in UI
+  const getActiveFilename = () => {
+    if (selectedFile) return selectedFile.name;
+    if (activeCaseId === 'TRI-2026-0001') return "fake-passport.jpg";
+    if (activeCaseId === 'TRI-2026-0002') return "genuine-passport.jpg";
+    if (activeCaseId === 'TRI-2026-0003') return "manipulated-passport.jpg";
+    return "unknown-passport.jpg";
+  };
 
   return (
     <div className="space-y-6">
@@ -170,7 +504,7 @@ export const ScreeningWorkspace: React.FC = () => {
             Multimodal Document Screening Workspace
           </h2>
           <p className="text-xs text-slate-400">
-            7-Stage Explainable AI Intelligence & Forensic Analysis Pipeline
+            Official border entry passenger identity validation portal
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -180,6 +514,7 @@ export const ScreeningWorkspace: React.FC = () => {
             onChange={(e) => {
               setActiveCaseId(e.target.value);
               setResultMode('NONE');
+              setResultData(null);
             }}
             className="bg-slate-900 border border-gov-border rounded px-3 py-1.5 text-xs text-amber-400 font-mono font-bold"
           >
@@ -190,10 +525,10 @@ export const ScreeningWorkspace: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Workspace Layout */}
+      {/* Main Two-Column Workspace Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Panel: Document Intake & Upload */}
-        <div className="lg:col-span-5 gov-card space-y-4">
+        {/* Left Column: Document Intake Panel */}
+        <div className="lg:col-span-5 gov-card space-y-4 h-fit">
           <div className="border-b border-gov-border pb-3 flex items-center justify-between">
             <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
               <Upload className="w-4 h-4 text-gov-accent" /> Document Intake Panel
@@ -222,6 +557,8 @@ export const ScreeningWorkspace: React.FC = () => {
                   setDocType(e.target.value);
                   setValidationResult(null);
                   setValidationPassed(null);
+                  setResultMode('NONE');
+                  setResultData(null);
                 }}
                 className="w-full bg-slate-900 border border-gov-border rounded p-2.5 text-white font-sans focus:outline-none"
               >
@@ -244,7 +581,7 @@ export const ScreeningWorkspace: React.FC = () => {
 
             {/* Drag & Drop Preview Zone */}
             <div
-              onClick={selectedFile ? handleDropZoneClickWrapper : handleDropZoneClick}
+              onClick={handleDropZoneClick}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               className={`border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center gap-2 bg-slate-950 transition-all cursor-pointer relative ${
@@ -269,14 +606,14 @@ export const ScreeningWorkspace: React.FC = () => {
                     <img
                       src={previewUrl}
                       alt="Document Preview"
-                      className="max-h-36 mx-auto rounded border border-slate-700 object-contain shadow-md"
+                      className="max-h-48 mx-auto rounded border border-slate-700 object-contain shadow-md"
                     />
                   )}
                   <div className="text-emerald-300 font-sans font-semibold text-xs flex items-center justify-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" /> {selectedFile.name}
                   </div>
                   <div className="text-[10px] text-slate-400 font-mono">
-                    ✓ High Quality Scan Ready for Analysis
+                    ✓ Scan Ready
                   </div>
                 </div>
               ) : (
@@ -300,190 +637,54 @@ export const ScreeningWorkspace: React.FC = () => {
               </div>
             )}
 
-            <button
-              onClick={triggerNormalScreening}
-              disabled={!canRunScreening}
-              className="w-full gov-button-primary justify-center py-3 text-sm font-sans font-bold uppercase tracking-wider shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isAnalyzing ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-amber-400" /> Executing 7-Stage Intelligence Pipeline...
-                </>
-              ) : isValidating ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-amber-400" /> Validating Document Type...
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 text-emerald-400 fill-emerald-400" /> Execute Multimodal AI Screening
-                </>
-              )}
-            </button>
+            {/* Action Buttons: side-by-side grid */}
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button
+                type="button"
+                onClick={triggerNormalScreening}
+                disabled={!selectedFile || isAnalyzing || isValidating}
+                className="flex items-center justify-center gap-2 px-3 py-3 text-xs font-sans font-bold uppercase tracking-wider border border-slate-800 bg-slate-900/40 text-slate-400 hover:bg-slate-800/60 hover:text-white rounded transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                🔍 Run Document Screening
+              </button>
+              <button
+                type="button"
+                onClick={triggerAuthenticityCheck}
+                disabled={!selectedFile || isAnalyzing || isValidating}
+                className="flex items-center justify-center gap-2 px-3 py-3 text-xs font-sans font-bold uppercase tracking-wider bg-[#00D4FF] hover:bg-[#00b0d4] text-[#0A0F1E] rounded transition-all shadow-[0_0_12px_rgba(0,212,255,0.25)] disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isAnalyzing ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#0A0F1E]" /> Running...
+                  </>
+                ) : (
+                  <>
+                    🛡️ Verify Authenticity
+                  </>
+                )}
+              </button>
+            </div>
 
-            <p className="text-[10px] text-slate-500 font-sans text-center leading-tight">
+            <p className="text-[10px] text-slate-500 font-sans text-center leading-tight pt-1">
               Document type classification establishes document category. Authenticity determination
               remains the sole responsibility of the AI forensic pipeline and authorized officers.
             </p>
           </div>
         </div>
 
-        {/* Right Panel: Results & Intelligence Display */}
-        <div className="lg:col-span-7 gov-card space-y-5">
-          <div className="border-b border-gov-border pb-3 flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <Layers className="w-4 h-4 text-blue-400" /> Real-Time Intelligence Pipeline Execution
-            </h3>
-            <span className="text-xs font-mono text-emerald-400">
-              {isAnalyzing ? `Stage ${currentStage} / 7 Active` : resultMode !== 'NONE' ? 'Analysis Complete' : 'Pipeline Ready'}
-            </span>
-          </div>
-
-          {/* Stage Progress List */}
-          <div className="space-y-2">
-            {stages.map((stg) => {
-              const Icon = stg.icon;
-              const isActive = currentStage === stg.id;
-              const isDone = currentStage > stg.id || (!isAnalyzing && resultMode !== 'NONE');
-
-              return (
-                <div
-                  key={stg.id}
-                  className={`p-3 rounded-lg border flex items-center justify-between transition-all ${
-                    isActive
-                      ? 'bg-blue-950/80 border-blue-500 text-white shadow-lg translate-x-1'
-                      : isDone
-                      ? 'bg-slate-900/90 border-emerald-500/40 text-emerald-300'
-                      : 'bg-slate-950/60 border-gov-border text-slate-400'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded ${isDone ? 'bg-emerald-950 text-emerald-400' : isActive ? 'bg-blue-900 text-blue-300 animate-pulse' : 'bg-slate-900 text-slate-500'}`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <span className="text-xs font-bold font-mono">{stg.name}</span>
-                  </div>
-
-                  {isDone ? (
-                    <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/30">
-                      COMPLETED
-                    </span>
-                  ) : isActive ? (
-                    <span className="text-[10px] font-mono text-amber-300 font-bold bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/30 animate-pulse">
-                      PROCESSING...
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-mono text-slate-500">PENDING</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* HIDDEN DOUBLE-CLICK RESULT CARD (Appears completely legitimate and professional) */}
-          {resultMode === 'AUTHENTICITY' && authenticityResult && (
-            <div className="border-t border-gov-border pt-4 space-y-4 animate-fade-in">
-              <div className={`p-4 rounded-lg border flex items-center justify-between ${
-                authenticityResult.status === 'FAKE'
-                  ? 'bg-red-950/80 border-red-500 text-red-200'
-                  : authenticityResult.status === 'SUSPICIOUS'
-                  ? 'bg-amber-950/80 border-amber-500 text-amber-200'
-                  : 'bg-emerald-950/80 border-emerald-500 text-emerald-200'
-              }`}>
-                <div>
-                  <div className="text-xs font-mono uppercase tracking-wider opacity-80">VERIFICATION RESULT STATUS</div>
-                  <div className="text-xl font-extrabold font-mono mt-0.5">{authenticityResult.status}</div>
-                  <div className="text-xs mt-1">Confidence Score: <span className="font-mono font-bold">{authenticityResult.confidence}%</span> • Threat Risk Level: <span className="font-mono font-bold">{authenticityResult.riskLevel}</span></div>
-                </div>
-                <StatusBadge
-                  status={authenticityResult.status === 'FAKE' ? 'CRITICAL' : authenticityResult.status === 'SUSPICIOUS' ? 'WARN' : 'PASS'}
-                  size="md"
-                />
-              </div>
-
-              {/* Reasons list */}
-              <div className="bg-slate-900 p-4 rounded-lg border border-gov-border space-y-2">
-                <div className="text-xs font-bold text-white font-mono uppercase tracking-wider">Forensic Threat Indicators:</div>
-                <ul className="space-y-1.5 text-xs text-slate-300 font-sans">
-                  {authenticityResult.reasons.map((reason, idx) => (
-                    <li key={idx} className="flex items-start gap-2">
-                      <span className="text-amber-400 font-bold">•</span> {reason}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Detailed checks breakdown */}
-              <div className="bg-slate-900 p-4 rounded-lg border border-gov-border space-y-3">
-                <div className="text-xs font-bold text-white font-mono uppercase tracking-wider">Document Security Verification:</div>
-                <div className="space-y-2 font-mono text-xs">
-                  {authenticityResult.checks.map((chk, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-2 bg-slate-950 rounded border border-slate-800">
-                      <div>
-                        <div className="text-slate-200 font-bold">{chk.name}</div>
-                        {chk.detail && <div className="text-[10px] text-slate-400">{chk.detail}</div>}
-                      </div>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                        chk.status === 'PASS' ? 'bg-emerald-950 text-emerald-400 border-emerald-500/40' :
-                        chk.status === 'WARN' ? 'bg-amber-950 text-amber-400 border-amber-500/40' :
-                        'bg-red-950 text-red-400 border-red-500/40'
-                      }`}>
-                        {chk.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
-                <button onClick={() => navigate('/ocr')} className="gov-button-secondary py-2 justify-center text-[11px]">
-                  Inspect OCR
-                </button>
-                <button onClick={() => navigate('/forensics')} className="gov-button-secondary py-2 justify-center text-[11px]">
-                  Forensics Lab
-                </button>
-                <button onClick={() => navigate('/identity-graph')} className="gov-button-secondary py-2 justify-center text-[11px]">
-                  Identity Graph
-                </button>
-                <button onClick={() => navigate('/risk-engine')} className="gov-button-primary py-2 justify-center text-[11px]">
-                  Explain Risk →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* SINGLE-CLICK NORMAL SCREENING RESULT */}
-          {resultMode === 'SCREENING' && screeningResult && (
-            <div className="border-t border-gov-border pt-4 space-y-3 animate-fade-in">
-              <div className="flex items-center justify-between bg-blue-950/60 border border-blue-500/40 p-3 rounded-lg">
-                <div>
-                  <div className="text-xs font-bold text-blue-300 font-mono">
-                    SCREENING COMPLETE: {screeningResult.documentType || 'Passport (ICAO Doc 9303)'}
-                  </div>
-                  <div className="text-[11px] text-slate-300">
-                    Holder: {travelerName || 'DEMO TRAVELER'} • Document No: {screeningResult.documentNumber || 'Not available'}
-                  </div>
-                </div>
-                <StatusBadge status={screeningResult.riskLevel || 'PASS'} />
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
-                <button onClick={() => navigate('/ocr')} className="gov-button-secondary py-2 justify-center text-[11px]">
-                  Inspect OCR
-                </button>
-                <button onClick={() => navigate('/forensics')} className="gov-button-secondary py-2 justify-center text-[11px]">
-                  Forensics Lab
-                </button>
-                <button onClick={() => navigate('/identity-graph')} className="gov-button-secondary py-2 justify-center text-[11px]">
-                  Identity Graph
-                </button>
-                <button onClick={() => navigate('/risk-engine')} className="gov-button-primary py-2 justify-center text-[11px]">
-                  Explain Risk →
-                </button>
-              </div>
-            </div>
-          )}
+        {/* Right Column: PipelineResults Accordion / Loading Progress */}
+        <div className="lg:col-span-7 h-fit" ref={resultsRef}>
+          <PipelineResults
+            isAnalyzing={isAnalyzing}
+            currentStage={currentStage}
+            resultData={resultData}
+            resultMode={resultMode}
+            filename={getActiveFilename()}
+          />
         </div>
       </div>
     </div>
   );
 };
+
+export default ScreeningWorkspace;
