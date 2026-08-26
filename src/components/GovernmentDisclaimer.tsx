@@ -7,7 +7,7 @@ export const GovernmentDisclaimer: React.FC = () => {
       <div className="flex items-center gap-2">
         <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
         <p>
-          <strong className="text-slate-300">GOVERNMENT DEMONSTRATION DISCLAIMER:</strong> TRINETRA is an AI-assisted decision-support prototype developed for demonstration purposes. It does not connect to real government databases or perform real-world identity/blacklist verification. Final clearance authority remains strictly with authorized border security officers.
+          <strong className="text-slate-300">GOVERNMENT DEMONSTRATION DISCLAIMER:</strong> DigiVerify is an AI-assisted screening prototype developed for demonstration purposes (SIH 2026). It does not connect to real government databases or perform real-world identity/blacklist verification. Final clearance authority remains strictly with authorized border security officers.
         </p>
       </div>
       <div className="text-[11px] font-mono text-slate-500 whitespace-nowrap">

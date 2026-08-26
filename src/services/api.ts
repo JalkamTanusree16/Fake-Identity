@@ -79,5 +79,27 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ case_id: caseId, ...attacks })
     });
+  },
+  validateDocumentType: async (file: File, expectedType: string): Promise<{
+    success: boolean;
+    expected_type: string;
+    detected_type: string;
+    confidence: number;
+    is_valid: boolean;
+    message: string;
+  }> => {
+    const token = localStorage.getItem('trinetra_token');
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('expected_document_type', expectedType);
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE}/documents/validate-type`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!res.ok) throw new Error(`Validation API Error ${res.status}`);
+    return res.json();
   }
 };

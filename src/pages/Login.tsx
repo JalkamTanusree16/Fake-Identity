@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Lock, User, KeyRound, ArrowRight, ShieldCheck, HelpCircle } from 'lucide-react';
+import { Shield, Lock, User, KeyRound, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Role } from '../types';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [username, setUsername] = useState('officer_mehta');
-  const [password, setPassword] = useState('mha123');
+  const [username, setUsername] = useState('screening@gmail.com');
+  const [password, setPassword] = useState('12345');
   const [otp, setOtp] = useState('884102');
-  const [selectedRole, setSelectedRole] = useState<Role>('screening_officer');
+  const [selectedRole, setSelectedRole] = useState<Role>('screening');
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -19,14 +19,15 @@ export const Login: React.FC = () => {
     if (success) {
       navigate('/dashboard');
     } else {
-      setError('Invalid credentials or security token.');
+      setError('Invalid credentials or security token. Password is 12345.');
     }
   };
 
   const handleQuickDemo = (user: string, role: Role) => {
     setUsername(user);
+    setPassword('12345');
     setSelectedRole(role);
-    login(user, 'mha123', role).then(() => navigate('/dashboard'));
+    login(user, '12345', role).then(() => navigate('/dashboard'));
   };
 
   return (
@@ -37,9 +38,9 @@ export const Login: React.FC = () => {
           <Shield className="w-6 h-6 text-gov-accent" />
           <span className="text-sm font-extrabold text-white tracking-wide">MINISTRY OF HOME AFFAIRS • GOVT. OF INDIA</span>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">TRINETRA</h1>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">DigiVerify</h1>
         <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto">
-          Trusted Risk Intelligence Network for Enhanced Travel & Identity Record Authentication
+          AI-Powered Identity & Document Verification — AI Screening Prototype
         </p>
       </div>
 
@@ -66,14 +67,14 @@ export const Login: React.FC = () => {
               onChange={(e) => setSelectedRole(e.target.value as Role)}
               className="w-full bg-slate-900 border border-gov-border rounded p-2.5 text-white font-sans focus:outline-none focus:border-gov-blue"
             >
-              <option value="screening_officer">Screening Officer (ICP Petrapole)</option>
-              <option value="senior_officer">Senior Officer (Border Intelligence)</option>
-              <option value="administrator">System Administrator (MHA NIC)</option>
+              <option value="screening">Screening Officer</option>
+              <option value="senior">Senior Officer</option>
+              <option value="admin">System Administrator</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-slate-300 mb-1 font-sans font-semibold">Username / Badge ID:</label>
+            <label className="block text-slate-300 mb-1 font-sans font-semibold">Username / Email:</label>
             <div className="relative">
               <User className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
               <input
@@ -87,7 +88,7 @@ export const Login: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-slate-300 mb-1 font-sans font-semibold">Password:</label>
+            <label className="block text-slate-300 mb-1 font-sans font-semibold">Password (12345):</label>
             <div className="relative">
               <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
               <input
@@ -118,32 +119,32 @@ export const Login: React.FC = () => {
           </button>
         </form>
 
-        {/* Demo Account Cards */}
+        {/* Quick Demo Accounts */}
         <div className="border-t border-gov-border pt-4">
           <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 text-center">
-            Instant SIH Demo Accounts:
+            Demo Accounts (Password: 12345):
           </div>
           <div className="grid grid-cols-3 gap-2 text-[10px] font-mono">
             <button
-              onClick={() => handleQuickDemo('officer_mehta', 'screening_officer')}
+              onClick={() => handleQuickDemo('screening@gmail.com', 'screening')}
               className="bg-slate-900 hover:bg-slate-800 p-2 rounded border border-slate-700 text-slate-200 text-center"
             >
-              <div className="font-bold text-blue-400">OFFICER</div>
-              <div className="text-slate-400 text-[9px]">Mehta</div>
+              <div className="font-bold text-blue-400">SCREENING</div>
+              <div className="text-slate-400 text-[9px]">screening@gmail.com</div>
             </button>
             <button
-              onClick={() => handleQuickDemo('senior_rawat', 'senior_officer')}
+              onClick={() => handleQuickDemo('senior@gmail.com', 'senior')}
               className="bg-slate-900 hover:bg-slate-800 p-2 rounded border border-slate-700 text-slate-200 text-center"
             >
               <div className="font-bold text-purple-400">SENIOR</div>
-              <div className="text-slate-400 text-[9px]">Rawat</div>
+              <div className="text-slate-400 text-[9px]">senior@gmail.com</div>
             </button>
             <button
-              onClick={() => handleQuickDemo('admin_singh', 'administrator')}
+              onClick={() => handleQuickDemo('admin@gmail.com', 'admin')}
               className="bg-slate-900 hover:bg-slate-800 p-2 rounded border border-slate-700 text-slate-200 text-center"
             >
               <div className="font-bold text-amber-400">ADMIN</div>
-              <div className="text-slate-400 text-[9px]">Singh</div>
+              <div className="text-slate-400 text-[9px]">admin@gmail.com</div>
             </button>
           </div>
         </div>
@@ -151,7 +152,7 @@ export const Login: React.FC = () => {
 
       {/* Footer Notice */}
       <div className="text-center text-xs text-slate-500 max-w-lg">
-        Ministry of Home Affairs • Sashastra Seema Bal (SSB) • Smart India Hackathon Problem 26188
+        Ministry of Home Affairs • Sashastra Seema Bal (SSB) • DigiVerify AI Prototype
       </div>
     </div>
   );

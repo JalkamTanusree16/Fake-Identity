@@ -2,21 +2,24 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ShieldAlert, CheckCircle2, Clock, FileText, Search, ArrowUpRight,
-  TrendingUp, Activity, BarChart2, ShieldCheck, MapPin
+  TrendingUp, Activity, BarChart2, MapPin, Database, Cpu
 } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, PieChart, Pie, Cell } from 'recharts';
 import { api } from '../services/api';
 import { useScreening } from '../context/ScreeningContext';
+import { useAuth } from '../context/AuthContext';
 import { StatusBadge } from '../components/StatusBadge';
 
 export const CommandDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { setActiveCaseId } = useScreening();
+  const { user } = useAuth();
   const [data, setData] = useState<any>(null);
+
+  const role = user?.role || 'screening';
 
   useEffect(() => {
     api.getAnalytics().then(setData).catch(() => {
-      // Fallback baseline dashboard metrics
       setData({
         summary: {
           total_screened_today: 1284,
@@ -60,9 +63,18 @@ export const CommandDashboard: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gov-navy p-5 rounded-lg border border-gov-border shadow">
         <div>
           <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
-            National Border Command Center <span className="text-xs font-mono font-normal text-slate-400">| ICP Petrapole Station</span>
+            National Border Command Center
+            <span className="text-xs font-mono px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30 uppercase">
+              ROLE: {user?.role ? user.role.replace('_', ' ') : 'SCREENING'}
+            </span>
           </h2>
-          <p className="text-xs text-slate-400 mt-1">Real-time AI multimodal identity screening & threat monitoring stream</p>
+          <p className="text-xs text-slate-400 mt-1">
+            {role.includes('admin')
+              ? 'System Health, System Statistics & Administrative Overview'
+              : role.includes('senior')
+              ? 'Review, Escalation & Decision Support Dashboard'
+              : 'Operational Traveler & Document Screening Pipeline'}
+          </p>
         </div>
         <button
           onClick={() => handleOpenHeroCase('TRI-2026-0001')}
@@ -76,7 +88,9 @@ export const CommandDashboard: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="gov-card border-l-4 border-l-blue-500 flex justify-between items-start">
           <div>
-            <div className="text-xs text-slate-400 font-medium">TOTAL SCREENED TODAY</div>
+            <div className="text-xs text-slate-400 font-medium">
+              {role.includes('admin') ? 'TOTAL SYSTEM SCREENINGS' : 'TOTAL SCREENED TODAY'}
+            </div>
             <div className="text-2xl font-extrabold font-mono text-white mt-1">{summary.total_screened_today || 1284}</div>
             <div className="text-[10px] text-emerald-400 font-mono mt-1 flex items-center gap-1">
               <TrendingUp className="w-3 h-3" /> +14.2% volume capacity
@@ -87,20 +101,30 @@ export const CommandDashboard: React.FC = () => {
 
         <div className="gov-card border-l-4 border-l-red-500 flex justify-between items-start">
           <div>
-            <div className="text-xs text-slate-400 font-medium">CRITICAL THREAT ALERTS</div>
+            <div className="text-xs text-slate-400 font-medium">
+              {role.includes('admin') ? 'SECURITY AUDIT EVENTS' : 'CRITICAL THREAT ALERTS'}
+            </div>
             <div className="text-2xl font-extrabold font-mono text-red-400 mt-1">{summary.critical_alerts || 7}</div>
-            <div className="text-[10px] text-red-400 font-mono mt-1">Requires Senior Escalation</div>
+            <div className="text-[10px] text-red-400 font-mono mt-1">
+              {role.includes('admin') ? 'Recorded in Blockchain Ledger' : 'Requires Senior Escalation'}
+            </div>
           </div>
           <ShieldAlert className="w-8 h-8 text-red-500/40" />
         </div>
 
         <div className="gov-card border-l-4 border-l-amber-500 flex justify-between items-start">
           <div>
-            <div className="text-xs text-slate-400 font-medium">AVG SCREENING SPEED</div>
-            <div className="text-2xl font-extrabold font-mono text-amber-400 mt-1">{summary.average_verification_time_sec || 4.2}s</div>
-            <div className="text-[10px] text-slate-400 font-mono mt-1">Target: &lt; 5.0 seconds</div>
+            <div className="text-xs text-slate-400 font-medium">
+              {role.includes('admin') ? 'SYSTEM API UPTIME' : 'AVG SCREENING SPEED'}
+            </div>
+            <div className="text-2xl font-extrabold font-mono text-amber-400 mt-1">
+              {role.includes('admin') ? summary.system_uptime || '99.98%' : `${summary.average_verification_time_sec || 4.2}s`}
+            </div>
+            <div className="text-[10px] text-slate-400 font-mono mt-1">
+              {role.includes('admin') ? 'All backend nodes operational' : 'Target: < 5.0 seconds'}
+            </div>
           </div>
-          <Clock className="w-8 h-8 text-amber-500/40" />
+          {role.includes('admin') ? <Cpu className="w-8 h-8 text-amber-500/40" /> : <Clock className="w-8 h-8 text-amber-500/40" />}
         </div>
 
         <div className="gov-card border-l-4 border-l-emerald-500 flex justify-between items-start">
@@ -119,7 +143,7 @@ export const CommandDashboard: React.FC = () => {
       <div className="bg-gradient-to-r from-blue-950/80 via-slate-900 to-amber-950/60 p-5 rounded-lg border border-amber-500/40 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-xs font-bold border border-amber-500/30">
-            🎯 SIH HERO JUDGING CASE: TRI-2026-0001
+            🎯 DEMO JUDGING CASE: TRI-2026-0001
           </div>
           <h3 className="text-base font-bold text-white">Traveler: Vikram Malhotra (Synthetic Adversarial Case)</h3>
           <p className="text-xs text-slate-300 max-w-2xl">
@@ -130,7 +154,7 @@ export const CommandDashboard: React.FC = () => {
           onClick={() => handleOpenHeroCase('TRI-2026-0001')}
           className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-5 py-2.5 rounded text-xs shadow-lg transition-colors flex items-center gap-2 shrink-0"
         >
-          Inspect Hero Case Pipeline <ArrowUpRight className="w-4 h-4" />
+          Inspect Case Pipeline <ArrowUpRight className="w-4 h-4" />
         </button>
       </div>
 
@@ -185,13 +209,21 @@ export const CommandDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Recent Screening Queue Table */}
+      {/* Recent Screening Queue Table / Role Insights */}
       <div className="gov-card space-y-3">
         <div className="flex items-center justify-between border-b border-gov-border pb-3">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Recent Case Screening Queue</h3>
-          <button onClick={() => navigate('/case-investigation')} className="text-xs text-blue-400 hover:underline font-mono">
-            View All Cases →
-          </button>
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+            {role.includes('admin')
+              ? 'System Audit & Management Log'
+              : role.includes('senior')
+              ? 'Escalation & Case Review Queue'
+              : 'Operational Screening Queue'}
+          </h3>
+          {(role.includes('senior') || role.includes('admin')) && (
+            <button onClick={() => navigate(role.includes('admin') ? '/audit-ledger' : '/case-investigation')} className="text-xs text-blue-400 hover:underline font-mono">
+              View Complete Ledger →
+            </button>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -199,8 +231,8 @@ export const CommandDashboard: React.FC = () => {
             <thead className="bg-slate-900 text-slate-400 uppercase text-[10px]">
               <tr>
                 <th className="p-3">Case ID</th>
-                <th className="p-3">Traveler Name</th>
-                <th className="p-3">Checkpoint</th>
+                <th className="p-3">Traveler / Log Name</th>
+                <th className="p-3">Checkpoint / Service</th>
                 <th className="p-3">Risk Score</th>
                 <th className="p-3">Severity</th>
                 <th className="p-3">Action</th>
@@ -210,7 +242,7 @@ export const CommandDashboard: React.FC = () => {
               <tr className="hover:bg-slate-800/60 transition-colors">
                 <td className="p-3 font-bold text-blue-400">TRI-2026-0001</td>
                 <td className="p-3 font-bold text-white">Vikram Malhotra</td>
-                <td className="p-3 text-slate-300">ICP Petrapole (IN-BD)</td>
+                <td className="p-3 text-slate-300">ICP Petrapole Checkpoint</td>
                 <td className="p-3 text-red-400 font-bold">86 / 100</td>
                 <td className="p-3"><StatusBadge status="CRITICAL" size="sm" /></td>
                 <td className="p-3">
@@ -234,7 +266,7 @@ export const CommandDashboard: React.FC = () => {
               <tr className="hover:bg-slate-800/60 transition-colors">
                 <td className="p-3 font-bold text-blue-400">TRI-2026-0003</td>
                 <td className="p-3 text-white">Rahul Verma</td>
-                <td className="p-3 text-slate-300">ICP Attari (IN-PK)</td>
+                <td className="p-3 text-slate-300">ICP Attari Checkpoint</td>
                 <td className="p-3 text-red-400 font-bold">82 / 100</td>
                 <td className="p-3"><StatusBadge status="CRITICAL" size="sm" /></td>
                 <td className="p-3">

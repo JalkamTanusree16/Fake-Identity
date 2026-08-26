@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Search, FileText, CheckSquare, Eye, Users,
   Network, Zap, FileSpreadsheet, ShieldAlert, Database, BarChart3,
-  Flame, Settings, LogIn, Scale
+  Flame, Settings, Scale
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -16,8 +16,8 @@ interface NavItem {
 }
 
 export const SidebarNav: React.FC = () => {
-  const { user } = useAuth();
-  const currentRole = user?.role || 'screening_officer';
+  const { user, login } = useAuth();
+  const currentRole = user?.role || 'screening';
 
   const navItems: NavItem[] = [
     { path: '/dashboard', label: 'Command Dashboard', icon: LayoutDashboard },
@@ -29,14 +29,18 @@ export const SidebarNav: React.FC = () => {
     { path: '/cross-document', label: 'Cross-Doc Matrix', icon: FileSpreadsheet },
     { path: '/identity-graph', label: 'Identity Graph', icon: Network, badge: 'USP' },
     { path: '/risk-engine', label: 'Explainable Risk', icon: Zap },
-    { path: '/case-investigation', label: 'Case Investigation', icon: Scale },
-    { path: '/senior-review', label: 'Senior Officer Review', icon: ShieldAlert, badge: 'Escalated', roles: ['senior_officer', 'administrator'] },
-    { path: '/audit-ledger', label: 'Blockchain Audit', icon: Database },
+    { path: '/case-investigation', label: 'Case Investigation', icon: Scale, roles: ['senior', 'senior_officer', 'admin', 'administrator'] },
+    { path: '/senior-review', label: 'Senior Officer Review', icon: ShieldAlert, badge: 'Escalated', roles: ['senior', 'senior_officer', 'admin', 'administrator'] },
+    { path: '/audit-ledger', label: 'Blockchain Audit', icon: Database, roles: ['senior', 'senior_officer', 'admin', 'administrator'] },
     { path: '/reports', label: 'Incident Reports', icon: FileText },
-    { path: '/analytics', label: 'System Analytics', icon: BarChart3 },
-    { path: '/attack-simulator', label: 'Attack Simulator', icon: Flame, badge: 'Judge' },
-    { path: '/settings', label: 'System Settings', icon: Settings, roles: ['administrator'] },
+    { path: '/analytics', label: 'System Analytics', icon: BarChart3, roles: ['admin', 'administrator'] },
+    { path: '/attack-simulator', label: 'Attack Simulator', icon: Flame, badge: 'Judge', roles: ['admin', 'administrator'] },
+    { path: '/settings', label: 'System Settings', icon: Settings, roles: ['admin', 'administrator'] },
   ];
+
+  const handleRoleSwitch = (username: string, role: string) => {
+    login(username, '12345', role as any);
+  };
 
   return (
     <aside className="w-64 bg-gov-navy border-r border-gov-border flex flex-col shrink-0 min-h-[calc(100vh-61px)]">
@@ -48,8 +52,9 @@ export const SidebarNav: React.FC = () => {
 
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
-          if (item.roles && !item.roles.includes(currentRole)) {
-            return null;
+          if (item.roles) {
+            const isAllowed = item.roles.some(r => currentRole.includes(r) || r.includes(currentRole));
+            if (!isAllowed) return null;
           }
           const Icon = item.icon;
           return (
@@ -86,9 +91,36 @@ export const SidebarNav: React.FC = () => {
       <div className="p-3 border-t border-gov-border/60 bg-gov-navyDark/50 text-xs">
         <div className="text-[10px] text-slate-400 font-semibold mb-1">DEMO ROLE SWITCHER:</div>
         <div className="grid grid-cols-3 gap-1">
-          <NavLink to="/login" className="bg-slate-800 hover:bg-slate-700 text-[10px] py-1 px-1 text-center rounded text-slate-300 font-mono">Screening</NavLink>
-          <NavLink to="/login" className="bg-slate-800 hover:bg-slate-700 text-[10px] py-1 px-1 text-center rounded text-slate-300 font-mono">Senior</NavLink>
-          <NavLink to="/login" className="bg-slate-800 hover:bg-slate-700 text-[10px] py-1 px-1 text-center rounded text-slate-300 font-mono">Admin</NavLink>
+          <button
+            onClick={() => handleRoleSwitch('screening@gmail.com', 'screening')}
+            className={`text-[10px] py-1 px-1 text-center rounded font-mono border ${
+              currentRole === 'screening' || currentRole === 'screening_officer'
+                ? 'bg-blue-600 text-white border-blue-400'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+            }`}
+          >
+            Screening
+          </button>
+          <button
+            onClick={() => handleRoleSwitch('senior@gmail.com', 'senior')}
+            className={`text-[10px] py-1 px-1 text-center rounded font-mono border ${
+              currentRole === 'senior' || currentRole === 'senior_officer'
+                ? 'bg-purple-600 text-white border-purple-400'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+            }`}
+          >
+            Senior
+          </button>
+          <button
+            onClick={() => handleRoleSwitch('admin@gmail.com', 'admin')}
+            className={`text-[10px] py-1 px-1 text-center rounded font-mono border ${
+              currentRole === 'admin' || currentRole === 'administrator'
+                ? 'bg-amber-600 text-white border-amber-400'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+            }`}
+          >
+            Admin
+          </button>
         </div>
       </div>
     </aside>
